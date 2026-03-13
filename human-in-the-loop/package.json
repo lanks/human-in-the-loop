@@ -24,6 +24,9 @@
     "skills",
     "openclaw.plugin.json"
   ],
+  "openclaw": {
+    "extensions": ["./src/index.ts"]
+  },
   "engines": {
     "node": ">=22"
   }
