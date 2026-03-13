@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-human-in-the-loop",
+  "name": "human-in-the-loop",
   "version": "1.0.0",
   "description": "OpenClaw plugin for securely collecting sensitive information from humans via one-time links",
   "type": "module",
