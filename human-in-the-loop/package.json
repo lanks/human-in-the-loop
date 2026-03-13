@@ -1,0 +1,30 @@
+{
+  "name": "openclaw-human-in-the-loop",
+  "version": "1.0.0",
+  "description": "OpenClaw plugin for securely collecting sensitive information from humans via one-time links",
+  "type": "module",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lanks/human-in-the-loop.git"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "agent-skills",
+    "human-in-the-loop",
+    "2fa",
+    "one-time-link",
+    "secrets",
+    "security"
+  ],
+  "files": [
+    "src",
+    "skills",
+    "openclaw.plugin.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}
