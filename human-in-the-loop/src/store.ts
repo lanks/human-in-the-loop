@@ -1,34 +1,40 @@
 import { randomBytes } from "node:crypto";
 
-export type InputType = "text" | "textarea" | "password";
+export type InputType = "text" | "textarea" | "password" | "email";
+
+export interface Field {
+  name: string;
+  label: string;
+  type: InputType;
+}
 
 export interface TokenEntry {
   token: string;
   prompt: string;
-  inputType: InputType;
+  fields: Field[];
   createdAt: number;
   expiresAt: number;
   used: boolean;
-  response: string | null;
+  response: Record<string, string> | null;
   read: boolean;
   renewedTo: string | null;
 }
 
 export type TokenStatus =
   | { status: "pending" }
-  | { status: "received"; value: string }
+  | { status: "received"; values: Record<string, string> }
   | { status: "expired"; renewedTo?: string };
 
 export class TokenStore {
   private store = new Map<string, TokenEntry>();
 
-  create(prompt: string, expirySec: number, inputType: InputType): TokenEntry {
+  create(prompt: string, expirySec: number, fields: Field[]): TokenEntry {
     const token = randomBytes(32).toString("base64url");
     const now = Date.now() / 1000;
     const entry: TokenEntry = {
       token,
       prompt,
-      inputType,
+      fields,
       createdAt: now,
       expiresAt: now + expirySec,
       used: false,
@@ -44,14 +50,14 @@ export class TokenStore {
     return this.store.get(token);
   }
 
-  submit(token: string, value: string): boolean {
+  submit(token: string, values: Record<string, string>): boolean {
     const entry = this.store.get(token);
     if (!entry) return false;
     if (entry.used) return false;
     if (Date.now() / 1000 > entry.expiresAt) return false;
 
     entry.used = true;
-    entry.response = value;
+    entry.response = values;
     return true;
   }
 
@@ -62,15 +68,13 @@ export class TokenStore {
     const now = Date.now() / 1000;
 
     if (entry.used && entry.response !== null) {
-      const value = entry.response;
-      // Zero the value after reading (read-once)
+      const values = entry.response;
       entry.read = true;
       entry.response = null;
-      return { status: "received", value };
+      return { status: "received", values };
     }
 
     if (entry.used && entry.read) {
-      // Already read — treat as expired to avoid confusion
       return { status: "expired" };
     }
 
@@ -88,14 +92,14 @@ export class TokenStore {
     const oldEntry = this.store.get(oldToken);
     if (!oldEntry) return null;
 
-    const newEntry = this.create(oldEntry.prompt, expirySec, oldEntry.inputType);
+    const newEntry = this.create(oldEntry.prompt, expirySec, oldEntry.fields);
     oldEntry.renewedTo = newEntry.token;
     return newEntry;
   }
 
   cleanup(): void {
     const now = Date.now() / 1000;
-    const maxAge = 600; // Remove entries 10 min past expiry
+    const maxAge = 600;
     for (const [token, entry] of this.store) {
       if (entry.read || now > entry.expiresAt + maxAge) {
         this.store.delete(token);

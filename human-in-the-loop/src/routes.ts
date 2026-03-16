@@ -38,11 +38,11 @@ function sendJson(
   res.end(body);
 }
 
-function parseFormBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    const maxSize = 64 * 1024; // 64KB limit
+    const maxSize = 64 * 1024;
 
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
@@ -54,14 +54,21 @@ function parseFormBody(req: IncomingMessage): Promise<string> {
       chunks.push(chunk);
     });
 
-    req.on("end", () => {
-      const body = Buffer.concat(chunks).toString("utf-8");
-      const params = new URLSearchParams(body);
-      resolve(params.get("value") ?? "");
-    });
-
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
+}
+
+function parseFormValues(
+  body: string,
+  fieldNames: string[],
+): Record<string, string> {
+  const params = new URLSearchParams(body);
+  const values: Record<string, string> = {};
+  for (const name of fieldNames) {
+    values[name] = params.get(name) ?? "";
+  }
+  return values;
 }
 
 export async function handleRequest(
@@ -125,7 +132,7 @@ function serveForm(
   sendHtml(
     res,
     200,
-    renderForm(token, entry.prompt, entry.inputType, entry.expiresAt),
+    renderForm(token, entry.prompt, entry.fields, entry.expiresAt),
   );
 }
 
@@ -136,13 +143,20 @@ async function handleSubmission(
   token: string,
 ): Promise<void> {
   try {
-    const value = await parseFormBody(req);
+    const entry = store.get(token);
+    if (!entry) {
+      sendHtml(res, 410, renderExpired(token));
+      return;
+    }
 
-    if (store.submit(token, value)) {
+    const body = await readBody(req);
+    const fieldNames = entry.fields.map((f) => f.name);
+    const values = parseFormValues(body, fieldNames);
+
+    if (store.submit(token, values)) {
       sendHtml(res, 200, renderSubmitted());
     } else {
-      const entry = store.get(token);
-      if (entry?.used) {
+      if (entry.used) {
         sendHtml(res, 410, renderAlreadyUsed());
       } else {
         sendHtml(res, 410, renderExpired(token));
@@ -167,7 +181,6 @@ function handleRenew(
     return;
   }
 
-  // Build the URL using the Host header from the request
   const host = req.headers.host ?? "localhost";
   const protocol = req.headers["x-forwarded-proto"] ?? "http";
   const url = `${protocol}://${host}/hitl/s/${newEntry.token}`;
