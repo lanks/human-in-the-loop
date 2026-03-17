@@ -1,10 +1,17 @@
 import { TokenStore } from "./store.js";
+import type { Field } from "./store.js";
 import { handleRequest } from "./routes.js";
+
+interface FieldParam {
+  name: string;
+  label: string;
+  type?: "text" | "textarea" | "password" | "email";
+}
 
 interface ToolParams {
   prompt?: string;
   expiry?: number;
-  input_type?: "text" | "textarea" | "password";
+  fields?: FieldParam[];
   token?: string;
 }
 
@@ -37,7 +44,6 @@ export default function register(api: PluginApi) {
   const config = api.getConfig?.() ?? {};
   const defaultExpiry = config.defaultExpiry ?? 300;
 
-  // Cleanup interval: remove expired/read entries every 30s
   setInterval(() => store.cleanup(), 30_000);
 
   // --- Agent Tools ---
@@ -46,32 +52,58 @@ export default function register(api: PluginApi) {
     name: "hitl_create",
     description:
       "Create a one-time link to securely collect sensitive information from a person. " +
-      "Returns a URL to send them. Use for 2FA codes, API keys, passwords, or any secret.",
+      "Returns a URL to send them. Supports multiple named fields per form (e.g. email + password).",
     parameters: {
       type: "object",
       properties: {
         prompt: {
           type: "string",
           description:
-            "Message shown to the person explaining what info is needed",
+            "Header message shown to the person explaining what info is needed",
+        },
+        fields: {
+          type: "array",
+          description:
+            "List of form fields to collect. Each field has a name (key for the response), " +
+            "label (shown to the person), and optional type.",
+          items: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Field key used in the response values object",
+              },
+              label: {
+                type: "string",
+                description: "Label shown above the input field",
+              },
+              type: {
+                type: "string",
+                enum: ["text", "textarea", "password", "email"],
+                description: "Input field type (default: text)",
+              },
+            },
+            required: ["name", "label"],
+          },
         },
         expiry: {
           type: "number",
           description: `Link expiry in seconds (default: ${defaultExpiry})`,
         },
-        input_type: {
-          type: "string",
-          enum: ["text", "textarea", "password"],
-          description: "Input field type (default: text)",
-        },
       },
-      required: ["prompt"],
+      required: ["prompt", "fields"],
     },
     async execute(_id, params) {
+      const fields: Field[] = (params.fields ?? []).map((f) => ({
+        name: f.name,
+        label: f.label,
+        type: f.type ?? "text",
+      }));
+
       const entry = store.create(
         params.prompt ?? "Please enter the requested information",
         params.expiry ?? defaultExpiry,
-        params.input_type ?? "text",
+        fields,
       );
       return {
         content: [
@@ -81,6 +113,7 @@ export default function register(api: PluginApi) {
               token: entry.token,
               path: `/hitl/s/${entry.token}`,
               expires_at: new Date(entry.expiresAt * 1000).toISOString(),
+              field_names: fields.map((f) => f.name),
               instructions:
                 "Send the link to the person. The path is relative to the gateway base URL. " +
                 "Use hitl_check with the token to poll for their response.",
@@ -95,7 +128,8 @@ export default function register(api: PluginApi) {
     name: "hitl_check",
     description:
       "Check if a person has submitted their response to a one-time link. " +
-      "Returns the submitted value if available, or 'pending'/'expired' status. " +
+      "Returns the submitted values as a keyed object (e.g. {email: '...', password: '...'}), " +
+      "or 'pending'/'expired' status. " +
       "If expired with a renewedTo token, the person requested a new link — check that token instead.",
     parameters: {
       type: "object",
@@ -110,7 +144,6 @@ export default function register(api: PluginApi) {
     async execute(_id, params) {
       const result = store.check(params.token ?? "");
 
-      // If the token was renewed, follow the chain
       if (result.status === "expired" && "renewedTo" in result && result.renewedTo) {
         return {
           content: [
@@ -136,7 +169,7 @@ export default function register(api: PluginApi) {
 
   api.registerHttpRoute({
     path: "/hitl/",
-    auth: "plugin", // No gateway auth — the crypto-random token IS the auth
+    auth: "plugin",
     match: "prefix",
     handler: (req, res) => handleRequest(req, res, store, defaultExpiry),
   });

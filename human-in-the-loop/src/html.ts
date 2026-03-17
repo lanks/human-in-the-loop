@@ -1,4 +1,4 @@
-import type { InputType } from "./store.js";
+import type { Field } from "./store.js";
 
 const STYLES = `
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,13 +23,20 @@ body {
 }
 h1 { font-size: 20px; margin-bottom: 16px; }
 .prompt { font-size: 16px; color: #555; margin-bottom: 20px; line-height: 1.5; }
-input[type="text"], input[type="password"], textarea {
+.field-group { margin-bottom: 16px; }
+.field-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 6px;
+}
+input[type="text"], input[type="password"], input[type="email"], textarea {
   width: 100%;
   padding: 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 16px;
-  margin-bottom: 16px;
   font-family: inherit;
 }
 textarea { min-height: 100px; resize: vertical; }
@@ -47,6 +54,7 @@ button {
   font-size: 16px;
   cursor: pointer;
   width: 100%;
+  margin-top: 8px;
 }
 button:hover { background: #1d4ed8; }
 button:disabled { background: #9ca3af; cursor: not-allowed; }
@@ -85,20 +93,30 @@ function layout(title: string, body: string, script?: string): string {
 </html>`;
 }
 
-function inputField(inputType: InputType): string {
-  if (inputType === "textarea") {
-    return `<textarea name="value" id="value" required autofocus placeholder="Enter your response here"></textarea>`;
+function renderField(field: Field, autofocus: boolean): string {
+  const name = escapeHtml(field.name);
+  const label = escapeHtml(field.label);
+  const af = autofocus ? " autofocus" : "";
+
+  let input: string;
+  if (field.type === "textarea") {
+    input = `<textarea name="${name}" id="field-${name}" required${af}></textarea>`;
+  } else {
+    const type = field.type === "password" ? "password" : field.type === "email" ? "email" : "text";
+    input = `<input type="${type}" name="${name}" id="field-${name}" required${af}>`;
   }
-  const type = inputType === "password" ? "password" : "text";
-  return `<input type="${type}" name="value" id="value" required autofocus placeholder="Enter your response here">`;
+
+  return `<div class="field-group"><label for="field-${name}">${label}</label>${input}</div>`;
 }
 
 export function renderForm(
   token: string,
   prompt: string,
-  inputType: InputType,
+  fields: Field[],
   expiresAt: number,
 ): string {
+  const fieldsHtml = fields.map((f, i) => renderField(f, i === 0)).join("\n      ");
+
   const timerScript = `
 (function() {
   var expiresAt = ${expiresAt};
@@ -127,7 +145,7 @@ export function renderForm(
     <h1>Secure Information Request</h1>
     <p class="prompt">${escapeHtml(prompt)}</p>
     <form id="submit-form" method="POST">
-      ${inputField(inputType)}
+      ${fieldsHtml}
       <button type="submit" id="submit-btn">Submit</button>
     </form>
     <div class="timer" id="timer"></div>
